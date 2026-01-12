@@ -53,7 +53,7 @@ from homeassistant.const import (  # noqa: F401
     STATE_STANDBY,
 )
 from homeassistant.core import HomeAssistant, SupportsResponse
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import Entity, EntityDescription
 from homeassistant.helpers.entity_component import EntityComponent
@@ -108,6 +108,7 @@ from .const import (  # noqa: F401
     REPEAT_MODES,
     SERVICE_BROWSE_MEDIA,
     SERVICE_CLEAR_PLAYLIST,
+    SERVICE_GET_GROUPABLE_MEMBERS,
     SERVICE_JOIN,
     SERVICE_PLAY_MEDIA,
     SERVICE_SEARCH_MEDIA,
@@ -466,12 +467,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     component.async_register_entity_service(
         SERVICE_UNJOIN, None, "async_unjoin_player", [MediaPlayerEntityFeature.GROUPING]
     )
-
     component.async_register_entity_service(
         SERVICE_REPEAT_SET,
         {vol.Required(ATTR_MEDIA_REPEAT): vol.Coerce(RepeatMode)},
         "async_set_repeat",
         [MediaPlayerEntityFeature.REPEAT_SET],
+    )
+    component.async_register_entity_service(
+        SERVICE_GET_GROUPABLE_MEMBERS,
+        None,
+        "async_get_groupable_players",
+        [MediaPlayerEntityFeature.GROUPING],
+        supports_response=SupportsResponse.ONLY,
     )
 
     return True
@@ -1192,6 +1199,39 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
     async def async_unjoin_player(self) -> None:
         """Remove this player from any group."""
         await self.hass.async_add_executor_job(self.unjoin_player)
+
+    def get_groupable_players(self) -> dict[str, Any]:
+        """Return a list of players that can be grouped with this player."""
+
+        component = self.hass.data.get(DATA_COMPONENT)
+        if component is None:
+            return {"result": []}
+
+        entity_registry = er.async_get(self.hass)
+
+        # Get the integration platform of the current entity
+        if not (entry := entity_registry.async_get(self.entity_id)):
+            return {"result": []}
+
+        current_platform = entry.platform
+
+        # Return only players from the same integration platform
+        result = [
+            entity_id
+            for entity_id in [
+                entity.entity_id
+                for entity in component.entities
+                if isinstance(entity, MediaPlayerEntity)
+            ]
+            if (registry_entry := entity_registry.async_get(entity_id))
+            and registry_entry.platform == current_platform
+        ]
+
+        return {"result": result}
+
+    async def async_get_groupable_players(self) -> dict[str, Any]:
+        """Return a list of players that can be grouped with this player."""
+        return await self.hass.async_add_executor_job(self.get_groupable_players)
 
     async def _async_fetch_image_from_cache(
         self, url: str

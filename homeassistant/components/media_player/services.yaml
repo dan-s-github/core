@@ -120,7 +120,7 @@ media_seek:
       selector:
         number:
           min: 0
-          max: 9223372036854775807
+          max: 9223372036854776000
           step: 0.01
           mode: box
 
@@ -284,6 +284,13 @@ join:
           domain: media_player
 
 unjoin:
+  target:
+    entity:
+      domain: media_player
+      supported_features:
+        - media_player.MediaPlayerEntityFeature.GROUPING
+
+get_groupable_players:
   target:
     entity:
       domain: media_player
