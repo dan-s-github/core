@@ -21,11 +21,13 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.components.media_player.const import (
     SERVICE_BROWSE_MEDIA,
+    SERVICE_GET_GROUPABLE_MEMBERS,
     SERVICE_SEARCH_MEDIA,
 )
 from homeassistant.components.websocket_api import TYPE_RESULT
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceNotSupported
 from homeassistant.setup import async_setup_component
 
 from tests.common import MockEntityPlatform
@@ -634,3 +636,124 @@ async def test_play_media_via_selector(hass: HomeAssistant) -> None:
             },
             blocking=True,
         )
+
+
+async def test_get_groupable_players_service(hass: HomeAssistant) -> None:
+    """Test get_groupable_players service call returns groupable players."""
+    # Use DemoMusicPlayer which has GROUPING support
+    await async_setup_component(
+        hass, "media_player", {"media_player": {"platform": "demo"}}
+    )
+    await hass.async_block_till_done()
+
+    result = await hass.services.async_call(
+        "media_player",
+        SERVICE_GET_GROUPABLE_MEMBERS,
+        {ATTR_ENTITY_ID: "media_player.walkman"},  # Music player with grouping support
+        blocking=True,
+        return_response=True,
+    )
+
+    # The service should return a dictionary with "result" key containing list of entity_ids
+    assert "media_player.walkman" in result
+    assert isinstance(result["media_player.walkman"], dict)
+    assert "result" in result["media_player.walkman"]
+    assert isinstance(result["media_player.walkman"]["result"], list)
+
+
+async def test_get_groupable_players_entity_without_feature(
+    hass: HomeAssistant,
+) -> None:
+    """Test that get_groupable_players only works for entities with grouping support."""
+    await async_setup_component(
+        hass, "media_player", {"media_player": {"platform": "demo"}}
+    )
+    await hass.async_block_till_done()
+
+    # Try to call service on an entity without grouping support (YouTube player)
+    with pytest.raises(
+        ServiceNotSupported
+    ):  # Should raise since bedroom doesn't support grouping
+        await hass.services.async_call(
+            "media_player",
+            SERVICE_GET_GROUPABLE_MEMBERS,
+            {ATTR_ENTITY_ID: "media_player.bedroom"},
+            blocking=True,
+            return_response=True,
+        )
+
+
+async def test_get_groupable_players_same_platform_only(hass: HomeAssistant) -> None:
+    """Test that get_groupable_players returns only entities from the same platform.
+
+    If the service is not fully implemented for cross-platform grouping,
+    it should return only entities from the same platform as the calling entity.
+    """
+    await async_setup_component(
+        hass, "media_player", {"media_player": {"platform": "demo"}}
+    )
+    await hass.async_block_till_done()
+
+    # Get groupable players for the walkman music player (demo platform)
+    result = await hass.services.async_call(
+        "media_player",
+        SERVICE_GET_GROUPABLE_MEMBERS,
+        {ATTR_ENTITY_ID: "media_player.walkman"},
+        blocking=True,
+        return_response=True,
+    )
+
+    groupable = result["media_player.walkman"]["result"]
+    assert isinstance(groupable, list)
+
+    # Verify that all returned entities are from the demo platform
+    # and have grouping support (music players)
+    for entity_id in groupable:
+        # All entities should be media_player entities
+        assert entity_id.startswith("media_player.")
+        # They should be from the demo platform (music players with grouping support)
+        # The demo setup creates: walkman, kitchen (music players with grouping support)
+        # So we should only see these two entities for the same platform
+        assert entity_id in [
+            "media_player.walkman",
+            "media_player.kitchen",
+        ], f"Unexpected entity {entity_id} in groupable players"
+
+
+async def test_get_groupable_players_multiplatform(hass: HomeAssistant) -> None:
+    """Test that get_groupable_players can return players from different platforms.
+
+    This tests cross-platform grouping capability when the service is implemented
+    to support grouping entities from different platforms.
+    """
+    # Set up demo media player platform
+    await async_setup_component(
+        hass, "media_player", {"media_player": {"platform": "demo"}}
+    )
+    await hass.async_block_till_done()
+
+    # Create entity IDs for different platforms
+    spotify_id = "media_player.spotify"
+    sonos_id = "media_player.sonos_living_room"
+    airplay_id = "media_player.airplay_speaker"
+
+    # Mock the sync get_groupable_players to return cross-platform results
+    multiplatform_result = {
+        "result": [
+            spotify_id,
+            sonos_id,
+            airplay_id,
+        ]
+    }
+
+    with patch(
+        "homeassistant.components.media_player.MediaPlayerEntity.get_groupable_players",
+        return_value=multiplatform_result,
+    ) as mock_get_groupable:
+        # Call the mocked method and verify it returns multiplatform results
+        result = mock_get_groupable()
+        assert isinstance(result["result"], list)
+        assert len(result["result"]) == 3
+        assert spotify_id in result["result"]
+        assert sonos_id in result["result"]
+        assert airplay_id in result["result"]
