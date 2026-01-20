@@ -1200,8 +1200,11 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         """Remove this player from any group."""
         await self.hass.async_add_executor_job(self.unjoin_player)
 
-    def get_groupable_players(self) -> dict[str, Any]:
+    async def async_get_groupable_players(self) -> dict[str, Any]:
         """Return a list of players that can be grouped with this player."""
+        # Check if this player supports grouping
+        if MediaPlayerEntityFeature.GROUPING not in self.supported_features:
+            return {"result": []}
 
         component = self.hass.data.get(DATA_COMPONENT)
         if component is None:
@@ -1215,23 +1218,25 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
 
         current_platform = entry.platform
 
-        # Return only players from the same integration platform
+        # Build a map of entity_ids for the current platform for faster lookup
+        platform_entities = {
+            entity_id: entity
+            for entity in component.entities
+            if isinstance(entity, MediaPlayerEntity)
+            and (registry_entry := entity_registry.async_get(entity.entity_id))
+            and registry_entry.platform == current_platform
+            for entity_id in (entity.entity_id,)
+        }
+
+        # Return only players that support grouping, excluding the calling entity
         result = [
             entity_id
-            for entity_id in [
-                entity.entity_id
-                for entity in component.entities
-                if isinstance(entity, MediaPlayerEntity)
-            ]
-            if (registry_entry := entity_registry.async_get(entity_id))
-            and registry_entry.platform == current_platform
+            for entity_id, entity in platform_entities.items()
+            if entity_id != self.entity_id
+            and (MediaPlayerEntityFeature.GROUPING in entity.supported_features)
         ]
 
         return {"result": result}
-
-    async def async_get_groupable_players(self) -> dict[str, Any]:
-        """Return a list of players that can be grouped with this player."""
-        return await self.hass.async_add_executor_job(self.get_groupable_players)
 
     async def _async_fetch_image_from_cache(
         self, url: str

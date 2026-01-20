@@ -721,7 +721,7 @@ async def test_get_groupable_players_same_platform_only(hass: HomeAssistant) -> 
 
 
 async def test_get_groupable_players_multiplatform(hass: HomeAssistant) -> None:
-    """Test that get_groupable_players can return players from different platforms.
+    """Test that get_groupable_players service can return players from different platforms.
 
     This tests cross-platform grouping capability when the service is implemented
     to support grouping entities from different platforms.
@@ -737,7 +737,7 @@ async def test_get_groupable_players_multiplatform(hass: HomeAssistant) -> None:
     sonos_id = "media_player.sonos_living_room"
     airplay_id = "media_player.airplay_speaker"
 
-    # Mock the sync get_groupable_players to return cross-platform results
+    # Mock the async_get_groupable_players method to return cross-platform results
     multiplatform_result = {
         "result": [
             spotify_id,
@@ -747,13 +747,29 @@ async def test_get_groupable_players_multiplatform(hass: HomeAssistant) -> None:
     }
 
     with patch(
-        "homeassistant.components.media_player.MediaPlayerEntity.get_groupable_players",
+        "homeassistant.components.media_player.MediaPlayerEntity.async_get_groupable_players",
         return_value=multiplatform_result,
-    ) as mock_get_groupable:
-        # Call the mocked method and verify it returns multiplatform results
-        result = mock_get_groupable()
-        assert isinstance(result["result"], list)
-        assert len(result["result"]) == 3
-        assert spotify_id in result["result"]
-        assert sonos_id in result["result"]
-        assert airplay_id in result["result"]
+    ):
+        # Call the service (not the method directly)
+        result = await hass.services.async_call(
+            "media_player",
+            SERVICE_GET_GROUPABLE_MEMBERS,
+            {
+                ATTR_ENTITY_ID: "media_player.walkman"
+            },  # Music player with grouping support
+            blocking=True,
+            return_response=True,
+        )
+
+        # Verify service returns proper response structure
+        assert "media_player.walkman" in result
+        assert isinstance(result["media_player.walkman"], dict)
+        assert "result" in result["media_player.walkman"]
+
+        # Verify multiplatform results are returned
+        groupable_players = result["media_player.walkman"]["result"]
+        assert isinstance(groupable_players, list)
+        assert len(groupable_players) == 3
+        assert spotify_id in groupable_players
+        assert sonos_id in groupable_players
+        assert airplay_id in groupable_players
