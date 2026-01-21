@@ -706,18 +706,20 @@ async def test_get_groupable_players_same_platform_only(hass: HomeAssistant) -> 
     groupable = result["media_player.walkman"]["result"]
     assert isinstance(groupable, list)
 
-    # Verify that all returned entities are from the demo platform
-    # and have grouping support (music players)
+    # The calling entity should not appear in its own groupable list
+    assert "media_player.walkman" not in groupable
+    # The demo setup creates walkman and kitchen as music players with grouping support,
+    # so for same-platform grouping we should only see kitchen here.
+    assert "media_player.kitchen" in groupable
+
+    # Verify that all returned entities are media_player entities and from the demo platform
     for entity_id in groupable:
         # All entities should be media_player entities
         assert entity_id.startswith("media_player.")
-        # They should be from the demo platform (music players with grouping support)
-        # The demo setup creates: walkman, kitchen (music players with grouping support)
-        # So we should only see these two entities for the same platform
-        assert entity_id in [
-            "media_player.walkman",
-            "media_player.kitchen",
-        ], f"Unexpected entity {entity_id} in groupable players"
+        # Only the kitchen music player (demo platform) should be present
+        assert entity_id == "media_player.kitchen", (
+            f"Unexpected entity {entity_id} in groupable players"
+        )
 
 
 async def test_get_groupable_players_multiplatform(hass: HomeAssistant) -> None:
