@@ -108,7 +108,7 @@ from .const import (  # noqa: F401
     REPEAT_MODES,
     SERVICE_BROWSE_MEDIA,
     SERVICE_CLEAR_PLAYLIST,
-    SERVICE_GET_GROUPABLE_MEMBERS,
+    SERVICE_GET_GROUPABLE_PLAYERS,
     SERVICE_JOIN,
     SERVICE_PLAY_MEDIA,
     SERVICE_SEARCH_MEDIA,
@@ -474,7 +474,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         [MediaPlayerEntityFeature.REPEAT_SET],
     )
     component.async_register_entity_service(
-        SERVICE_GET_GROUPABLE_MEMBERS,
+        SERVICE_GET_GROUPABLE_PLAYERS,
         None,
         "async_get_groupable_players",
         [MediaPlayerEntityFeature.GROUPING],
@@ -1218,8 +1218,6 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         # Build a map of entity_ids for the current platform for faster lookup
         platform_entities: dict[str, MediaPlayerEntity] = {}
         for entity in component.entities:
-            if not isinstance(entity, MediaPlayerEntity):
-                continue
             registry_entry = entity_registry.async_get(entity.entity_id)
             if not registry_entry or registry_entry.platform != current_platform:
                 continue
