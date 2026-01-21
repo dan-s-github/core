@@ -1216,14 +1216,14 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         current_platform = entry.platform
 
         # Build a map of entity_ids for the current platform for faster lookup
-        platform_entities = {
-            entity_id: entity
-            for entity in component.entities
-            if isinstance(entity, MediaPlayerEntity)
-            and (registry_entry := entity_registry.async_get(entity.entity_id))
-            and registry_entry.platform == current_platform
-            for entity_id in (entity.entity_id,)
-        }
+        platform_entities: dict[str, MediaPlayerEntity] = {}
+        for entity in component.entities:
+            if not isinstance(entity, MediaPlayerEntity):
+                continue
+            registry_entry = entity_registry.async_get(entity.entity_id)
+            if not registry_entry or registry_entry.platform != current_platform:
+                continue
+            platform_entities[entity.entity_id] = entity
 
         # Return only players that support grouping, excluding the calling entity
         result = [
