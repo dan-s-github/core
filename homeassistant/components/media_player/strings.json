@@ -210,7 +210,7 @@
       "name": "Clear playlist"
     },
     "get_groupable_players": {
-      "description": "Gets a list of media players that can be grouped together for synchronized playback. Only works on supported multiroom audio systems.",
+      "description": "Gets a list of media players that can be grouped together for synchronous playback. Only works on supported multiroom audio systems.",
       "name": "Get groupable players"
     },
     "join": {
