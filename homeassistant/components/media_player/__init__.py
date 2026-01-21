@@ -1202,9 +1202,6 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
 
     async def async_get_groupable_players(self) -> dict[str, Any]:
         """Return a list of players that can be grouped with this player."""
-        # Check if this player supports grouping
-        if MediaPlayerEntityFeature.GROUPING not in self.supported_features:
-            return {"result": []}
 
         component = self.hass.data.get(DATA_COMPONENT)
         if component is None:
