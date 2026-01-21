@@ -1,6 +1,7 @@
 """Test the base functions of the media player."""
 
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -722,56 +723,61 @@ async def test_get_groupable_players_same_platform_only(hass: HomeAssistant) -> 
         )
 
 
-async def test_get_groupable_players_multiplatform(hass: HomeAssistant) -> None:
-    """Test that get_groupable_players service can return players from different platforms.
+async def test_get_groupable_players_multiplatform_override(
+    hass: HomeAssistant,
+) -> None:
+    """Test that integrations can override async_get_groupable_players for multi-platform support.
 
-    This tests cross-platform grouping capability when the service is implemented
-    to support grouping entities from different platforms.
+    This demonstrates how an integration can override the default implementation
+    to return entities from multiple platforms that it can group together.
     """
-    # Set up demo media player platform
-    await async_setup_component(
-        hass, "media_player", {"media_player": {"platform": "demo"}}
+
+    class MultiPlatformMediaPlayer(MediaPlayerEntity):
+        """Test media player that supports grouping across platforms."""
+
+        _attr_supported_features = media_player.MediaPlayerEntityFeature.GROUPING
+
+        def __init__(self, entity_id: str, name: str) -> None:
+            """Initialize the test entity."""
+            self.entity_id = entity_id
+            self._attr_name = name
+
+        async def async_get_groupable_players(self) -> dict[str, Any]:
+            """Override to return multi-platform groupable players."""
+            # Integration-specific logic that can determine which players
+            # from different platforms can be grouped together
+            return {
+                "result": [
+                    "media_player.spotify_player",
+                    "media_player.sonos_living_room",
+                    "media_player.chromecast_kitchen",
+                ]
+            }
+
+    # Create and register the custom entity
+    entity = MultiPlatformMediaPlayer("media_player.test_player", "Test Player")
+    entity.hass = hass
+    entity.platform = MockEntityPlatform(hass)
+
+    # Add entity to registry and component
+    component = await media_player.async_get_component(hass)
+    component.entities.append(entity)
+    await entity.async_internal_added_to_hass()
+
+    # Call the service
+    result = await hass.services.async_call(
+        "media_player",
+        SERVICE_GET_GROUPABLE_MEMBERS,
+        {ATTR_ENTITY_ID: "media_player.test_player"},
+        blocking=True,
+        return_response=True,
     )
-    await hass.async_block_till_done()
 
-    # Create entity IDs for different platforms
-    spotify_id = "media_player.spotify"
-    sonos_id = "media_player.sonos_living_room"
-    airplay_id = "media_player.airplay_speaker"
-
-    # Mock the async_get_groupable_players method to return cross-platform results
-    multiplatform_result = {
-        "result": [
-            spotify_id,
-            sonos_id,
-            airplay_id,
-        ]
-    }
-
-    with patch(
-        "homeassistant.components.media_player.MediaPlayerEntity.async_get_groupable_players",
-        return_value=multiplatform_result,
-    ):
-        # Call the service (not the method directly)
-        result = await hass.services.async_call(
-            "media_player",
-            SERVICE_GET_GROUPABLE_MEMBERS,
-            {
-                ATTR_ENTITY_ID: "media_player.walkman"
-            },  # Music player with grouping support
-            blocking=True,
-            return_response=True,
-        )
-
-        # Verify service returns proper response structure
-        assert "media_player.walkman" in result
-        assert isinstance(result["media_player.walkman"], dict)
-        assert "result" in result["media_player.walkman"]
-
-        # Verify multiplatform results are returned
-        groupable_players = result["media_player.walkman"]["result"]
-        assert isinstance(groupable_players, list)
-        assert len(groupable_players) == 3
-        assert spotify_id in groupable_players
-        assert sonos_id in groupable_players
-        assert airplay_id in groupable_players
+    # Verify the overridden implementation's results are returned
+    assert "media_player.test_player" in result
+    groupable_players = result["media_player.test_player"]["result"]
+    assert isinstance(groupable_players, list)
+    assert len(groupable_players) == 3
+    assert "media_player.spotify_player" in groupable_players
+    assert "media_player.sonos_living_room" in groupable_players
+    assert "media_player.chromecast_kitchen" in groupable_players
