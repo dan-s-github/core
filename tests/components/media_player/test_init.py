@@ -22,7 +22,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.components.media_player.const import (
     SERVICE_BROWSE_MEDIA,
-    SERVICE_GET_GROUPABLE_MEMBERS,
+    SERVICE_GET_GROUPABLE_PLAYERS,
     SERVICE_SEARCH_MEDIA,
 )
 from homeassistant.components.websocket_api import TYPE_RESULT
@@ -649,7 +649,7 @@ async def test_get_groupable_players_service(hass: HomeAssistant) -> None:
 
     result = await hass.services.async_call(
         "media_player",
-        SERVICE_GET_GROUPABLE_MEMBERS,
+        SERVICE_GET_GROUPABLE_PLAYERS,
         {ATTR_ENTITY_ID: "media_player.walkman"},  # Music player with grouping support
         blocking=True,
         return_response=True,
@@ -677,7 +677,7 @@ async def test_get_groupable_players_entity_without_feature(
     ):  # Should raise since bedroom doesn't support grouping
         await hass.services.async_call(
             "media_player",
-            SERVICE_GET_GROUPABLE_MEMBERS,
+            SERVICE_GET_GROUPABLE_PLAYERS,
             {ATTR_ENTITY_ID: "media_player.bedroom"},
             blocking=True,
             return_response=True,
@@ -687,40 +687,66 @@ async def test_get_groupable_players_entity_without_feature(
 async def test_get_groupable_players_same_platform_only(hass: HomeAssistant) -> None:
     """Test that get_groupable_players returns only entities from the same platform.
 
-    If the service is not fully implemented for cross-platform grouping,
-    it should return only entities from the same platform as the calling entity.
+    The default implementation returns only entities from the same platform
+    as the calling entity.
     """
-    await async_setup_component(
-        hass, "media_player", {"media_player": {"platform": "demo"}}
-    )
+
+    class TestMediaPlayer(MediaPlayerEntity):
+        """Test media player with grouping support."""
+
+        _attr_supported_features = media_player.MediaPlayerEntityFeature.GROUPING
+        _attr_has_entity_name = True
+
+        def __init__(self, unique_id: str, name: str) -> None:
+            """Initialize the test entity."""
+            self._attr_unique_id = unique_id
+            self._attr_name = name
+
+    # Setup media_player component first
+    await async_setup_component(hass, "media_player", {})
     await hass.async_block_till_done()
 
-    # Get groupable players for the walkman music player (demo platform)
+    # Create test entities on the same platform
+    player1 = TestMediaPlayer("test_player_1", "Player 1")
+    player1.hass = hass
+    player1.platform = MockEntityPlatform(hass, platform_name="test_platform")
+    player1.entity_id = "media_player.player_1"
+
+    player2 = TestMediaPlayer("test_player_2", "Player 2")
+    player2.hass = hass
+    player2.platform = MockEntityPlatform(hass, platform_name="test_platform")
+    player2.entity_id = "media_player.player_2"
+
+    player3 = TestMediaPlayer("test_player_3", "Player 3")
+    player3.hass = hass
+    player3.platform = MockEntityPlatform(hass, platform_name="test_platform")
+    player3.entity_id = "media_player.player_3"
+
+    # Add entities to the component
+    component = hass.data.get("entity_components", {}).get("media_player")
+    assert component
+    await component.async_add_entities([player1, player2, player3])
+    await hass.async_block_till_done()
+
+    # Get groupable players for player1
     result = await hass.services.async_call(
         "media_player",
-        SERVICE_GET_GROUPABLE_MEMBERS,
-        {ATTR_ENTITY_ID: "media_player.walkman"},
+        SERVICE_GET_GROUPABLE_PLAYERS,
+        {ATTR_ENTITY_ID: "media_player.player_1"},
         blocking=True,
         return_response=True,
     )
 
-    groupable = result["media_player.walkman"]["result"]
+    groupable = result["media_player.player_1"]["result"]
     assert isinstance(groupable, list)
 
     # The calling entity should not appear in its own groupable list
-    assert "media_player.walkman" not in groupable
-    # The demo setup creates walkman and kitchen as music players with grouping support,
-    # so for same-platform grouping we should only see kitchen here.
-    assert "media_player.kitchen" in groupable
+    assert "media_player.player_1" not in groupable
 
-    # Verify that all returned entities are media_player entities and from the demo platform
-    for entity_id in groupable:
-        # All entities should be media_player entities
-        assert entity_id.startswith("media_player.")
-        # Only the kitchen music player (demo platform) should be present
-        assert entity_id == "media_player.kitchen", (
-            f"Unexpected entity {entity_id} in groupable players"
-        )
+    # Should return the other two players from the same platform
+    assert "media_player.player_2" in groupable
+    assert "media_player.player_3" in groupable
+    assert len(groupable) == 2
 
 
 async def test_get_groupable_players_multiplatform_override(
@@ -754,20 +780,28 @@ async def test_get_groupable_players_multiplatform_override(
                 ]
             }
 
+    # Setup media_player component first
+    await async_setup_component(hass, "media_player", {})
+    await hass.async_block_till_done()
+
     # Create and register the custom entity
     entity = MultiPlatformMediaPlayer("media_player.test_player", "Test Player")
     entity.hass = hass
     entity.platform = MockEntityPlatform(hass)
 
-    # Add entity to registry and component
-    component = await media_player.async_get_component(hass)
-    component.entities.append(entity)
-    await entity.async_internal_added_to_hass()
+    # Manually add entity to the entity component
+    component = hass.data.get("entity_components", {}).get("media_player")
+    if component:
+        await component.async_add_entities([entity])
+    else:
+        # Fallback: add directly to state machine
+        await entity.async_internal_added_to_hass()
+        await hass.async_block_till_done()
 
     # Call the service
     result = await hass.services.async_call(
         "media_player",
-        SERVICE_GET_GROUPABLE_MEMBERS,
+        SERVICE_GET_GROUPABLE_PLAYERS,
         {ATTR_ENTITY_ID: "media_player.test_player"},
         blocking=True,
         return_response=True,

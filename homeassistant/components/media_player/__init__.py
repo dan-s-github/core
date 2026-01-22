@@ -1201,7 +1201,7 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         await self.hass.async_add_executor_job(self.unjoin_player)
 
     async def async_get_groupable_players(self) -> dict[str, Any]:
-        """Return a list of players that can be grouped with this player."""
+        """Return a dictionary with a list of players that can be grouped with this player."""
 
         component = self.hass.data.get(DATA_COMPONENT)
         if component is None:
@@ -1215,20 +1215,19 @@ class MediaPlayerEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
 
         current_platform = entry.platform
 
-        # Build a map of entity_ids for the current platform for faster lookup
-        platform_entities: dict[str, MediaPlayerEntity] = {}
-        for entity in component.entities:
-            registry_entry = entity_registry.async_get(entity.entity_id)
-            if not registry_entry or registry_entry.platform != current_platform:
-                continue
-            platform_entities[entity.entity_id] = entity
-
+        # Build a set of entity_ids for the current platform for faster lookup
+        platform_entity_ids = {
+            entity_id
+            for entity_id, registry_entry in entity_registry.entities.items()
+            if registry_entry.platform == current_platform
+        }
         # Return only players that support grouping, excluding the calling entity
         result = [
-            entity_id
-            for entity_id, entity in platform_entities.items()
-            if entity_id != self.entity_id
-            and (MediaPlayerEntityFeature.GROUPING in entity.supported_features)
+            entity.entity_id
+            for entity in component.entities
+            if entity.entity_id != self.entity_id
+            and entity.entity_id in platform_entity_ids
+            and MediaPlayerEntityFeature.GROUPING in entity.supported_features
         ]
 
         return {"result": result}
