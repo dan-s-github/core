@@ -640,8 +640,11 @@ async def test_play_media_via_selector(hass: HomeAssistant) -> None:
 
 
 async def test_get_groupable_players_service(hass: HomeAssistant) -> None:
-    """Test get_groupable_players service call returns groupable players."""
-    # Use DemoMusicPlayer which has GROUPING support
+    """Test get_groupable_players service returns correct response structure."""
+    # Simple test to verify service exists and returns the expected structure.
+    # The filtering logic (platform matching, feature support) is tested
+    # in test_get_groupable_players_same_platform_only and
+    # test_get_groupable_players_multiplatform_override below.
     await async_setup_component(
         hass, "media_player", {"media_player": {"platform": "demo"}}
     )
@@ -650,12 +653,13 @@ async def test_get_groupable_players_service(hass: HomeAssistant) -> None:
     result = await hass.services.async_call(
         "media_player",
         SERVICE_GET_GROUPABLE_PLAYERS,
-        {ATTR_ENTITY_ID: "media_player.walkman"},  # Music player with grouping support
+        {ATTR_ENTITY_ID: "media_player.walkman"},
         blocking=True,
         return_response=True,
     )
 
-    # The service should return a dictionary with "result" key containing list of entity_ids
+    # Verify the service returns proper response structure
+    assert result is not None
     assert "media_player.walkman" in result
     assert isinstance(result["media_player.walkman"], dict)
     assert "result" in result["media_player.walkman"]
@@ -737,6 +741,8 @@ async def test_get_groupable_players_same_platform_only(hass: HomeAssistant) -> 
         return_response=True,
     )
 
+    assert result is not None
+    assert isinstance(result["media_player.player_1"], dict)
     groupable = result["media_player.player_1"]["result"]
     assert isinstance(groupable, list)
 
@@ -808,7 +814,9 @@ async def test_get_groupable_players_multiplatform_override(
     )
 
     # Verify the overridden implementation's results are returned
+    assert result is not None
     assert "media_player.test_player" in result
+    assert isinstance(result["media_player.test_player"], dict)
     groupable_players = result["media_player.test_player"]["result"]
     assert isinstance(groupable_players, list)
     assert len(groupable_players) == 3
